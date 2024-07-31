@@ -17,7 +17,7 @@ from multiprocessing import Pool
 ## CHANGE THE FOLLOWING VALUES
 total_number_of_samples = 100
 num_cpu = 10
-planet_mass_range = (10,80)
+planet_mass_range = (1,50)
 ######################################
 ## THE RESULTS WILL BE IN etv_sample.csv
 ######################################
@@ -94,8 +94,8 @@ def eclipse_duration(period):
 # This is the output file
 etv_sample_df = open("etv_sample.csv","w")
 etv_sample_df.write("ra,dec,sectors,Tmag,sigmaTmag,per_binary,t_ref_binary,mass_binary,ecl_depth,ecl_duration,delta_mag,sigma_flux_at_depth,\
-			etv_error,planet_mass, planet_period, planet_ecc, planet_omega, planet_tperi, planet_inc, planet_node,period_lombscargle,\
-			amplitude_etv,amplitude_lombscargle\n")
+etv_error,planet_mass, planet_period, planet_ecc, planet_omega, planet_tperi, planet_inc, planet_node,period_lombscargle,\
+amplitude_etv,amplitude_lombscargle\n")
 etv_sample_df.close()
 
 def etv_recovery(tot_num_samples = 10):
