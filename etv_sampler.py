@@ -1,20 +1,17 @@
 # ><
 import datetime
+import importlib
 start = datetime.datetime.now() # timekeeping is important
 
 import numpy as np
 import pandas as pd
-from rebound_model import rebound_model as rbmod
-from lite_delay import lite_delay
 from astropy import units as u
-from tess_stars2px import tess_stars2px_function_entry
 import scipy.stats as stats
-import ticgen
 from astropy.timeseries import LombScargle
 from multiprocessing import Pool
 from paths import get_data_path
+from tdpy.verbosity import print
 ######################################
-print()
 
 ######################################
 ## CHANGE THE FOLLOWING VALUES
@@ -28,7 +25,7 @@ planet_mass_range = (1,50) # in jupiter masses, from uniform
 # This is the file that contains time windows for TESS orbits.
 # It is being used mostly in function "is_in_tess_obs"
 DATA_PATH = get_data_path()
-tess_obs_range = pd.read_csv(DATA_PATH / "TESS_orbit_times.csv")
+tess_obs_range = None
 
 
 def random_star(number_of_star):
@@ -40,6 +37,7 @@ def random_star(number_of_star):
 	return ra, dec, ticid ,mag
 
 def find_sectors(ra,dec,ticid):
+	from tess_stars2px import tess_stars2px_function_entry
 	# It does what the name says
 	outID, outEclipLong, outEclipLat, outSec, outCam, outCcd, outColPix, outRowPix, scinfo = tess_stars2px_function_entry(ticid, ra, dec)
 	return_array = []
@@ -48,15 +46,56 @@ def find_sectors(ra,dec,ticid):
 		return_array.append([ra[i],dec[i],outSec[ii].tolist()])
 	return return_array
 
-def is_in_tess_obs(obstime,sectors_to_look):
+def is_in_tess_obs(obstime,sectors_to_look,observation_windows=None):
 	# This function checks if any given time is in TESS observation times based on TESS_orbit_times.csv
+	windows = tess_obs_range if observation_windows is None else observation_windows
+	if windows is None:
+		raise ValueError("Provide observation_windows or load the TESS orbit table")
 	results = []
 	for time_float in obstime:
-		result = any(row['StartD'] <= time_float <= row['EndD'] and (row['Sector'] in sectors_to_look) for index, row in tess_obs_range.iterrows())
+		result = any(row['StartD'] <= time_float <= row['EndD'] and (row['Sector'] in sectors_to_look) for index, row in windows.iterrows())
 		results.append(result)
 	return results
 
+def search_timing_period(time_days,delay_seconds):
+	"""Search timing residuals using the recovery workflow's frequency bounds.
+
+	Times must increase strictly. Numeric inputs are in days and seconds;
+	Astropy quantities are converted to those units. The longest searched
+	period is half the observed baseline, and the shortest is twice the
+	minimum sample spacing. These bounds do not guarantee a unique period.
+	"""
+	if np.ma.is_masked(time_days) or np.ma.is_masked(delay_seconds):
+		raise ValueError("Timing observations must not be masked")
+	if isinstance(time_days,u.Quantity):
+		time_days = time_days.to_value(u.day)
+	if isinstance(delay_seconds,u.Quantity):
+		delay_seconds = delay_seconds.to_value(u.s)
+	time_days = np.asarray(time_days,dtype=float)
+	delay_seconds = np.asarray(delay_seconds,dtype=float)
+	if time_days.ndim != 1 or delay_seconds.shape != time_days.shape or len(time_days) < 3:
+		raise ValueError("Provide matching one-dimensional arrays with at least three observations")
+	if not np.isfinite(time_days).all() or not np.isfinite(delay_seconds).all():
+		raise ValueError("Timing observations must be finite")
+	if np.any(np.diff(time_days) <= 0):
+		raise ValueError("Observation times must increase strictly")
+	if np.ptp(delay_seconds) == 0:
+		raise ValueError("Constant timing residuals do not define a period")
+	maximum_frequency = 1 / (np.min(np.diff(time_days)) * 2) # [1/day]
+	minimum_frequency = 2 / np.ptp(time_days) # [1/day]
+	if minimum_frequency >= maximum_frequency:
+		raise ValueError("The baseline must exceed four times the shortest sample spacing")
+	periodogram = LombScargle(time_days,delay_seconds,normalization='standard')
+	frequencies,power = periodogram.autopower(samples_per_peak=200,
+		maximum_frequency=maximum_frequency,minimum_frequency=minimum_frequency)
+	if not np.isfinite(power).all():
+		raise ValueError("The timing periodogram contains nonfinite power")
+	peak_frequency = frequencies[np.argmax(power)] # [1/day]
+	return {'period_days': 1 / peak_frequency,'frequency_per_day': peak_frequency,
+		'frequencies_per_day': frequencies,'power': power,'lomb_scargle': periodogram}
+
 def ttv_model(parameters,setup,pri_mass):
+	from rebound_model import rebound_model as rbmod
 	# Wraps up the parameters and settings to rebound model
 	times_, xyz_com, vxvyvz_com, axayaz_com, xyz_hel, vxvyvz_hel, axayaz_hel = rbmod(start = setup[0],\
 							times = setup[1],\
@@ -97,13 +136,14 @@ def eclipse_duration(period):
 
 # This is the output file
 etv_sample_path = DATA_PATH / "etv_sample.csv"
-etv_sample_df = open(etv_sample_path, "w")
-etv_sample_df.write("ra,dec,sectors,Tmag,sigmaTmag,per_binary,t_ref_binary,mass_binary,ecl_depth,ecl_duration,delta_mag,sigma_flux_at_depth,\
-etv_error,planet_mass,planet_period,planet_ecc,planet_omega,planet_tperi,planet_inc,planet_node,period_lombscargle,\
-amplitude_etv,amplitude_lombscargle\n")
-etv_sample_df.close()
 
 def etv_recovery(tot_num_samples = 10):
+	import ticgen
+	from lite_delay import lite_delay
+	global tess_obs_range
+	if tess_obs_range is None:
+		print("Reading from data/TESS_orbit_times.csv...")
+		tess_obs_range = pd.read_csv(DATA_PATH / "TESS_orbit_times.csv")
 	# printing time is a problem that needs some more time to solve
 	timeswitch = 0
 	if type(tot_num_samples) == str:
@@ -114,7 +154,7 @@ def etv_recovery(tot_num_samples = 10):
 	
 		if timeswitch:
 			finish_ = datetime.datetime.now()
-			print("Pseudo-run number: ",(rnd+1)*num_cpu,"of total",total_number_of_samples,"| Time passed: ",(finish_ - start))
+			print("Worker sample",rnd+1,"of",tot_num_samples,"| Time passed:",finish_ - start)
 
 		np.random.seed() # randomization in each iteration
 
@@ -186,12 +226,10 @@ def etv_recovery(tot_num_samples = 10):
 				mask = is_in_tess_obs(eclipse_times,sects)
 				etv_x, etv_y = eclipse_times[mask],np.random.normal(lite[mask],etv_error)
 				if len(etv_x) > 2:
-					max_freq = 1/(np.min(np.diff(etv_x))*2)
-					min_freq = 1/((np.max(etv_x) - np.min(etv_x))/2)
-					ls = LombScargle(etv_x, etv_y, normalization='standard')
-					freq, power = ls.autopower(samples_per_peak = 200,maximum_frequency=max_freq,minimum_frequency=min_freq)
-					freq_max = freq[np.where(power == power.max())][0]
-					period_ls = 1./freq_max
+					search = search_timing_period(etv_x,etv_y)
+					ls = search['lomb_scargle']
+					freq_max = search['frequency_per_day']
+					period_ls = search['period_days']
 					
 					x_theo = np.linspace(times[0],times[-1],5000)
 					freq_curve_theo = ls.model(x_theo, freq_max)
@@ -206,6 +244,7 @@ def etv_recovery(tot_num_samples = 10):
 				np.round(t_ref_binary,4),np.round(mass_binary,4),np.round(ecl_depth,10),np.round(ecl_duration,10),np.round(delta_mag,10),
 				np.round(sigma_flux_at_depth,4),np.round(etv_error,4),np.round((masses_in[0]*u.solMass).to(u.jupiterMass).value,10),np.round(periods_in[0],4),eccs_in[0],omegas_in[0],
 				np.round(tperis_in[0],4),np.round(incs_in[0],4),nodes_in[0],np.round(period_ls,4),np.round(amp_lite,4),np.round(amp_ls,4))
+			print("Writing to data/etv_sample.csv...")
 			etv_sample_df = open(etv_sample_path, "a")
 			for icolmn, colmn in enumerate(new_row):
 				if icolmn == 2:
@@ -220,14 +259,26 @@ def etv_recovery(tot_num_samples = 10):
 			etv_sample_df.close()
 
 
-if total_number_of_samples < num_cpu:
-	num_cpu = int(total_number_of_samples)
-pooling_list = [int(total_number_of_samples/num_cpu)]*num_cpu
-pooling_list[-1] = str(pooling_list[-1])
+def main():
+	workers = min(total_number_of_samples, num_cpu)
+	if workers < 1:
+		raise ValueError("Sample and worker counts must be positive")
+	for module_name in ('rebound_model','lite_delay','tess_stars2px','ticgen'):
+		importlib.import_module(module_name)
+	print("Reading from data/TESS_orbit_times.csv...")
+	pd.read_csv(DATA_PATH / "TESS_orbit_times.csv")
+	print("Writing to data/etv_sample.csv...")
+	with open(etv_sample_path, "w") as output:
+		output.write("ra,dec,sectors,Tmag,sigmaTmag,per_binary,t_ref_binary,mass_binary,ecl_depth,ecl_duration,delta_mag,sigma_flux_at_depth,\
+etv_error,planet_mass,planet_period,planet_ecc,planet_omega,planet_tperi,planet_inc,planet_node,period_lombscargle,\
+amplitude_etv,amplitude_lombscargle\n")
+	per_worker,remainder = divmod(total_number_of_samples,workers)
+	pooling_list = [per_worker + (worker < remainder) for worker in range(workers)]
+	pooling_list[-1] = str(pooling_list[-1])
+	with Pool(workers) as pool:
+		pool.map(etv_recovery,pooling_list)
+	print("FINISHED IN", datetime.datetime.now() - start)
 
-with Pool(num_cpu) as p:
-	p.map(etv_recovery,pooling_list)
 
-
-finish = datetime.datetime.now()
-print("FINISHED IN",(finish - start))
+if __name__ == "__main__":
+	main()
