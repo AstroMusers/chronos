@@ -12,6 +12,7 @@ import scipy.stats as stats
 import ticgen
 from astropy.timeseries import LombScargle
 from multiprocessing import Pool
+from paths import get_data_path
 ######################################
 print()
 
@@ -26,7 +27,8 @@ planet_mass_range = (1,50) # in jupiter masses, from uniform
 
 # This is the file that contains time windows for TESS orbits.
 # It is being used mostly in function "is_in_tess_obs"
-tess_obs_range = pd.read_csv("TESS_orbit_times.csv")
+DATA_PATH = get_data_path()
+tess_obs_range = pd.read_csv(DATA_PATH / "TESS_orbit_times.csv")
 
 
 def random_star(number_of_star):
@@ -94,7 +96,8 @@ def eclipse_duration(period):
 	return ecl_dur
 
 # This is the output file
-etv_sample_df = open("etv_sample.csv","w")
+etv_sample_path = DATA_PATH / "etv_sample.csv"
+etv_sample_df = open(etv_sample_path, "w")
 etv_sample_df.write("ra,dec,sectors,Tmag,sigmaTmag,per_binary,t_ref_binary,mass_binary,ecl_depth,ecl_duration,delta_mag,sigma_flux_at_depth,\
 etv_error,planet_mass,planet_period,planet_ecc,planet_omega,planet_tperi,planet_inc,planet_node,period_lombscargle,\
 amplitude_etv,amplitude_lombscargle\n")
@@ -203,7 +206,7 @@ def etv_recovery(tot_num_samples = 10):
 				np.round(t_ref_binary,4),np.round(mass_binary,4),np.round(ecl_depth,10),np.round(ecl_duration,10),np.round(delta_mag,10),
 				np.round(sigma_flux_at_depth,4),np.round(etv_error,4),np.round((masses_in[0]*u.solMass).to(u.jupiterMass).value,10),np.round(periods_in[0],4),eccs_in[0],omegas_in[0],
 				np.round(tperis_in[0],4),np.round(incs_in[0],4),nodes_in[0],np.round(period_ls,4),np.round(amp_lite,4),np.round(amp_ls,4))
-			etv_sample_df = open("etv_sample.csv","a")
+			etv_sample_df = open(etv_sample_path, "a")
 			for icolmn, colmn in enumerate(new_row):
 				if icolmn == 2:
 					i2 = str(colmn).replace("\n","")[1:-1].lstrip().rstrip().replace("  ",";").replace(" ",";")
