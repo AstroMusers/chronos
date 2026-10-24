@@ -142,8 +142,9 @@ def etv_recovery(tot_num_samples = 10):
 	from lite_delay import lite_delay
 	global tess_obs_range
 	if tess_obs_range is None:
-		print("Reading from data/TESS_orbit_times.csv...")
-		tess_obs_range = pd.read_csv(DATA_PATH / "TESS_orbit_times.csv")
+		tess_path = DATA_PATH / "TESS_orbit_times.csv"
+		print(f"Reading from {tess_path}...")
+		tess_obs_range = pd.read_csv(tess_path)
 	# printing time is a problem that needs some more time to solve
 	timeswitch = 0
 	if type(tot_num_samples) == str:
@@ -244,19 +245,18 @@ def etv_recovery(tot_num_samples = 10):
 				np.round(t_ref_binary,4),np.round(mass_binary,4),np.round(ecl_depth,10),np.round(ecl_duration,10),np.round(delta_mag,10),
 				np.round(sigma_flux_at_depth,4),np.round(etv_error,4),np.round((masses_in[0]*u.solMass).to(u.jupiterMass).value,10),np.round(periods_in[0],4),eccs_in[0],omegas_in[0],
 				np.round(tperis_in[0],4),np.round(incs_in[0],4),nodes_in[0],np.round(period_ls,4),np.round(amp_lite,4),np.round(amp_ls,4))
-			print("Writing to data/etv_sample.csv...")
-			etv_sample_df = open(etv_sample_path, "a")
-			for icolmn, colmn in enumerate(new_row):
-				if icolmn == 2:
-					i2 = str(colmn).replace("\n","")[1:-1].lstrip().rstrip().replace("  ",";").replace(" ",";")
-					etv_sample_df.write(i2)
-				else:
-					etv_sample_df.write(str(colmn))
-				if icolmn < len(new_row) - 1:
-					etv_sample_df.write(",")
-				else:
-					etv_sample_df.write("\n")
-			etv_sample_df.close()
+			print(f"Writing to {etv_sample_path}...")
+			with etv_sample_path.open("a", newline="", encoding="utf-8") as output_file:
+				for column_index, column in enumerate(new_row):
+					if column_index == 2:
+						formatted = str(column).replace("\n", "")[1:-1].lstrip().rstrip().replace("  ", ";").replace(" ", ";")
+						output_file.write(formatted)
+					else:
+						output_file.write(str(column))
+					if column_index < len(new_row) - 1:
+						output_file.write(",")
+					else:
+						output_file.write("\n")
 
 
 def main():
@@ -265,10 +265,11 @@ def main():
 		raise ValueError("Sample and worker counts must be positive")
 	for module_name in ('rebound_model','lite_delay','tess_stars2px','ticgen'):
 		importlib.import_module(module_name)
-	print("Reading from data/TESS_orbit_times.csv...")
-	pd.read_csv(DATA_PATH / "TESS_orbit_times.csv")
-	print("Writing to data/etv_sample.csv...")
-	with open(etv_sample_path, "w") as output:
+	tess_path = DATA_PATH / "TESS_orbit_times.csv"
+	print(f"Reading from {tess_path}...")
+	pd.read_csv(tess_path)
+	print(f"Writing to {etv_sample_path}...")
+	with etv_sample_path.open("w", encoding="utf-8") as output:
 		output.write("ra,dec,sectors,Tmag,sigmaTmag,per_binary,t_ref_binary,mass_binary,ecl_depth,ecl_duration,delta_mag,sigma_flux_at_depth,\
 etv_error,planet_mass,planet_period,planet_ecc,planet_omega,planet_tperi,planet_inc,planet_node,period_lombscargle,\
 amplitude_etv,amplitude_lombscargle\n")

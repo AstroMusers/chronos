@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 from astropy import units as u
 from astropy.timeseries import LombScargle
+from tdpy.verbosity import print
 
 import etv_sampler
 
@@ -98,7 +99,7 @@ def test_observation_windows_must_be_supplied_outside_recovery(monkeypatch):
         etv_sampler.is_in_tess_obs([1], [1])
 
 
-def test_recovery_startup_schedules_all_requested_draws(tmp_path, monkeypatch):
+def test_recovery_startup_schedules_all_requested_draws(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(etv_sampler, 'DATA_PATH', tmp_path)
     monkeypatch.setattr(etv_sampler, 'etv_sample_path', tmp_path / 'etv_sample.csv')
     monkeypatch.setattr(etv_sampler, 'total_number_of_samples', 100)
@@ -111,9 +112,9 @@ def test_recovery_startup_schedules_all_requested_draws(tmp_path, monkeypatch):
         return original_import(name, *args, **kwargs)
 
     monkeypatch.setattr(etv_sampler.importlib, 'import_module', optional_import)
-    pd.DataFrame({'Sector': [1], 'StartD': [0], 'EndD': [10]}).to_csv(
-        tmp_path / 'TESS_orbit_times.csv', index=False,
-    )
+    tess_path = tmp_path / 'TESS_orbit_times.csv'
+    print(f'Writing to {tess_path}...')
+    pd.DataFrame({'Sector': [1], 'StartD': [0], 'EndD': [10]}).to_csv(tess_path, index=False)
     scheduled = []
 
     class RecordingPool:
@@ -131,10 +132,18 @@ def test_recovery_startup_schedules_all_requested_draws(tmp_path, monkeypatch):
             scheduled.extend(int(batch) for batch in batches)
 
     monkeypatch.setattr(etv_sampler, 'Pool', RecordingPool)
+    monkeypatch.setenv('TDPY_VERBOSITY', '1')
+    capsys.readouterr()
     etv_sampler.main()
+    output = capsys.readouterr().out.splitlines()
+    assert output[:2] == [
+        f'Reading from {tess_path}...',
+        f'Writing to {etv_sampler.etv_sample_path}...',
+    ]
     assert len(scheduled) == 38
     assert sum(scheduled) == 100
     assert max(scheduled) - min(scheduled) == 1
+    print(f'Reading from {etv_sampler.etv_sample_path}...')
     assert list(pd.read_csv(etv_sampler.etv_sample_path).columns)[-1] == 'amplitude_lombscargle'
 
 
