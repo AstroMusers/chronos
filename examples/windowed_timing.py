@@ -15,6 +15,7 @@ if str(REPOSITORY_PATH) not in sys.path:
 
 from etv_sampler import etv_noise, is_in_tess_obs, search_timing_period
 from paths import get_repository_path
+from tdpy.cli import add_plot_arguments
 from tdpy.verbosity import print
 
 
@@ -168,7 +169,7 @@ def plot_timing_example(result, output_directory=None, typefileplot='png', typep
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--typefileplot', choices=['png', 'pdf'], default='png')
+    add_plot_arguments(parser)
     parser.add_argument('--typeplotback', choices=['white', 'dark'], default='white')
     parser.add_argument('--bokeh', action='store_true')
     arguments = parser.parse_args()

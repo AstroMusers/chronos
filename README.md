@@ -1,8 +1,8 @@
 # chronos
 
-Can a circumbinary planet reveal itself through eclipse-timing variations, even when TESS observes only in separated windows? The script generates synthetic eclipsing-binary and planet populations, samples eclipse times within TESS observing windows, adds a simple timing-noise estimate, and searches with a Lomb-Scargle periodogram. Its population distributions are assumptions. The resulting recovery estimate describes the simulation and does not measure an observed recovery rate. The script reads `TESS_orbit_times.csv`, which is not included in this repository.
+Can eclipse-timing variations reveal a circumbinary planet when TESS observes the binary in separated windows? We simulate eclipsing binaries and planets, sample eclipse times within the TESS observing windows, add timing noise, and search the resulting variations with a Lomb-Scargle periodogram. Estimated recovery depends on the assumed populations and timing-noise model.
 
-Set `CHRONOS_PATH` to the checkout directory when running the sampler from elsewhere. If unset, Chronos uses its checkout root. The current script reads `TESS_orbit_times.csv` from the ignored `data/` directory and writes `etv_sample.csv` there. Generated figures can go in the ignored `visuals/` directory.
+Set `CHRONOS_PATH` to the checkout directory when running the sampler from elsewhere. If unset, Chronos uses its checkout root. `etv_sampler.py` reads `TESS_orbit_times.csv` from the ignored `data/` directory and writes `etv_sample.csv` there. Generated figures can go in the ignored `visuals/` directory.
 
 ## Timing-search example
 
@@ -10,7 +10,7 @@ In [Observing windows and eclipse timing](examples/WindowedTiming.ipynb), we com
 
 ![Synthetic timing residuals across the full observation baseline, with selected windows, the injected sinusoid, and a fitted sinusoid](images/synthetic_windowed_timing.png)
 
-The assumed signal has a 35-second amplitude and a 420-day period. Hypothetical eclipses occur every 2.5 days over 1200 days, with independent Gaussian noise. The observing windows and signal are synthetic. These figures show the injected timing pattern and period search. They cannot measure detection significance, identify a unique physical orbit, or determine survey recovery.
+The assumed signal has a 35-second amplitude and a 420-day period. Hypothetical eclipses occur every 2.5 days over 1200 days, with independent Gaussian noise. The observing windows and timing signal are synthetic. The figures show their effect on the measured timing residuals and period search.
 
 From the checkout root:
 
